@@ -145,10 +145,118 @@ DRUG_DATABASE = {
 }
 
 
+# ---------------------------------------------------------------------------
+# openFDA Integration
+# ---------------------------------------------------------------------------
+def fetch_fda_drug_info(drug_name: str) -> dict:
+    """
+    Fetch drug label data from openFDA API.
+    Returns drug interactions section and other relevant labeling info.
+    No API key required for basic usage (limit: 240 requests/min without key).
+    """
+    import urllib.request
+    import urllib.error
+    import urllib.parse
+
+    result = {
+        "found": False,
+        "brand_name": None,
+        "generic_name": None,
+        "drug_interactions": None,
+        "warnings": None,
+        "indications_and_usage": None,
+        "mechanism_of_action": None
+    }
+
+    try:
+        # Search by generic name first (most reliable), fallback to brand
+        encoded = urllib.parse.quote(drug_name.lower())
+        url = (
+            f"https://api.fda.gov/drug/label.json"
+            f"?search=openfda.generic_name:\"{encoded}\""
+            f"&limit=1"
+        )
+
+        req = urllib.request.Request(url, method="GET")
+        req.add_header("User-Agent", "DrugSafeAI/1.0")
+
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode("utf-8"))
+
+            if data.get("results"):
+                label = data["results"][0]
+                result["found"] = True
+
+                # Extract key fields (each is a list of strings in the API)
+                openfda = label.get("openfda", {})
+                result["brand_name"] = (openfda.get("brand_name") or [None])[0]
+                result["generic_name"] = (openfda.get("generic_name") or [None])[0]
+
+                # Drug interactions section from the label
+                interactions = label.get("drug_interactions")
+                if interactions:
+                    # Truncate to keep prompt manageable
+                    text = interactions[0][:1500]
+                    result["drug_interactions"] = text
+
+                # Warnings section
+                warnings = label.get("warnings")
+                if warnings:
+                    result["warnings"] = warnings[0][:800]
+
+                # Indications
+                indications = label.get("indications_and_usage")
+                if indications:
+                    result["indications_and_usage"] = indications[0][:500]
+
+                # Mechanism of action
+                moa = label.get("mechanism_of_action")
+                if moa:
+                    result["mechanism_of_action"] = moa[0][:500]
+
+    except (urllib.error.HTTPError, urllib.error.URLError):
+        pass  # FDA API may not have data for every drug
+    except Exception:
+        pass
+
+    return result
+
+
+def fetch_fda_adverse_events(drug1: str, drug2: str) -> int:
+    """
+    Query openFDA adverse events where two drugs were co-reported.
+    Returns the count of adverse event reports involving both drugs.
+    """
+    import urllib.request
+    import urllib.error
+    import urllib.parse
+
+    try:
+        d1 = urllib.parse.quote(drug1.lower())
+        d2 = urllib.parse.quote(drug2.lower())
+        url = (
+            f"https://api.fda.gov/drug/event.json"
+            f"?search=patient.drug.openfda.generic_name:\"{d1}\""
+            f"+AND+patient.drug.openfda.generic_name:\"{d2}\""
+            f"&limit=1"
+        )
+
+        req = urllib.request.Request(url, method="GET")
+        req.add_header("User-Agent", "DrugSafeAI/1.0")
+
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode("utf-8"))
+            # The meta.results.total field has the count
+            return data.get("meta", {}).get("results", {}).get("total", 0)
+
+    except Exception:
+        return 0
+
+
 def build_nemotron_prompt(medications: list[str]) -> str:
     """
     Build a structured prompt for Nemotron to analyze drug interactions.
-    Includes drug metadata for grounded reasoning.
+    Includes drug metadata from local DB AND live FDA label data.
     """
     # Look up drug info from our database
     drug_info_parts = []
@@ -174,13 +282,49 @@ def build_nemotron_prompt(medications: list[str]) -> str:
     if unrecognized:
         drug_context += f"\n\nNote: The following medications were not found in the local database but should still be analyzed using your medical knowledge: {', '.join(unrecognized)}"
 
+    # --- Fetch FDA label data for each drug ---
+    fda_sections = []
+    for med in medications:
+        fda = fetch_fda_drug_info(med.strip())
+        if fda["found"]:
+            parts = [f"- **{med.strip().title()}** (FDA Label)"]
+            if fda["generic_name"]:
+                parts.append(f"  Generic: {fda['generic_name']}")
+            if fda["drug_interactions"]:
+                parts.append(f"  FDA Drug Interactions: {fda['drug_interactions']}")
+            if fda["mechanism_of_action"]:
+                parts.append(f"  FDA Mechanism: {fda['mechanism_of_action']}")
+            if fda["warnings"]:
+                parts.append(f"  FDA Warnings (excerpt): {fda['warnings'][:400]}")
+            fda_sections.append("\n".join(parts))
+
+    fda_context = ""
+    if fda_sections:
+        fda_context = "\n\n## FDA Drug Label Data (from openFDA)\n" + "\n\n".join(fda_sections)
+
+    # --- Fetch FDA adverse event co-occurrence counts ---
+    ae_parts = []
+    med_list = [m.strip() for m in medications]
+    for i in range(len(med_list)):
+        for j in range(i + 1, len(med_list)):
+            count = fetch_fda_adverse_events(med_list[i], med_list[j])
+            if count > 0:
+                ae_parts.append(f"- {med_list[i].title()} + {med_list[j].title()}: {count:,} adverse event reports in FDA FAERS database")
+
+    ae_context = ""
+    if ae_parts:
+        ae_context = "\n\n## FDA Adverse Event Co-occurrence Data\n" + "\n".join(ae_parts)
+        ae_context += "\n(Higher counts may indicate a signal but also reflect common co-prescribing. Use clinical judgment.)"
+
     prompt = f"""You are a clinical pharmacology AI assistant powered by NVIDIA Nemotron. Analyze potential drug-drug interactions for the following medications.
 
 ## Medications & Known Properties
 {drug_context}
+{fda_context}
+{ae_context}
 
 ## Task
-Analyze ALL pairwise drug interactions between these medications. For each interaction found, provide:
+Analyze ALL pairwise drug interactions between these medications. Use BOTH the local drug database properties AND the FDA label data provided above to ground your analysis. For each interaction found, provide:
 
 1. **Drug Pair**: The two drugs involved
 2. **Severity**: Exactly one of: "major", "moderate", or "minor"
@@ -318,6 +462,7 @@ def check_interactions():
     result["drug_details"] = drug_details
     result["model_used"] = NEMOTRON_MODEL
     result["powered_by"] = "NVIDIA NIM + Nemotron"
+    result["data_sources"] = ["Local Drug Database", "openFDA Drug Labels", "FDA FAERS Adverse Events"]
 
     return jsonify(result)
 
@@ -326,7 +471,8 @@ def check_interactions():
 def list_drugs():
     """Return list of drugs in our database for autocomplete."""
     return jsonify({
-        "drugs": sorted([d.title() for d in DRUG_DATABASE.keys()])
+        "drugs": sorted([d.title() for d in DRUG_DATABASE.keys()]),
+        "note": "You can also type any drug name — the app will query FDA data even for drugs not in this list."
     })
 
 
