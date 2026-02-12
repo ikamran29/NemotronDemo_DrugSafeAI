@@ -1,0 +1,1158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DrugSafe AI — Drug Interaction Checker | Powered by NVIDIA Nemotron</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700&family=JetBrains+Mono:wght@400;500;600&family=Playfair+Display:wght@700;800;900&display=swap" rel="stylesheet">
+    <style>
+        /* ===== CSS Variables & Reset ===== */
+        :root {
+            --bg-primary: #0a0e17;
+            --bg-secondary: #111827;
+            --bg-card: #1a2234;
+            --bg-card-hover: #1f2a40;
+            --bg-input: #0f1729;
+            --border: #1e3a5f;
+            --border-subtle: #1a2744;
+            --text-primary: #e8edf5;
+            --text-secondary: #8899b4;
+            --text-muted: #5a6b85;
+            --accent-green: #76b947;
+            --accent-green-glow: rgba(118, 185, 71, 0.15);
+            --accent-teal: #2dd4bf;
+            --severity-major: #ef4444;
+            --severity-major-bg: rgba(239, 68, 68, 0.08);
+            --severity-major-border: rgba(239, 68, 68, 0.25);
+            --severity-moderate: #f59e0b;
+            --severity-moderate-bg: rgba(245, 158, 11, 0.08);
+            --severity-moderate-border: rgba(245, 158, 11, 0.25);
+            --severity-minor: #3b82f6;
+            --severity-minor-bg: rgba(59, 130, 246, 0.08);
+            --severity-minor-border: rgba(59, 130, 246, 0.25);
+            --risk-critical: #dc2626;
+            --risk-high: #ef4444;
+            --risk-moderate: #f59e0b;
+            --risk-low: #22c55e;
+            --radius: 12px;
+            --radius-sm: 8px;
+            --radius-lg: 16px;
+            --shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+            --shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.4);
+            --nvidia-green: #76b900;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        html { scroll-behavior: smooth; }
+
+        body {
+            font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* ===== Background Effects ===== */
+        .bg-grid {
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(118, 185, 71, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(118, 185, 71, 0.03) 1px, transparent 1px);
+            background-size: 60px 60px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .bg-glow {
+            position: fixed;
+            width: 600px;
+            height: 600px;
+            border-radius: 50%;
+            filter: blur(120px);
+            opacity: 0.07;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .bg-glow-1 {
+            top: -200px;
+            right: -100px;
+            background: var(--nvidia-green);
+        }
+
+        .bg-glow-2 {
+            bottom: -200px;
+            left: -100px;
+            background: var(--accent-teal);
+        }
+
+        /* ===== Layout ===== */
+        .container {
+            max-width: 920px;
+            margin: 0 auto;
+            padding: 0 24px;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* ===== Header ===== */
+        header {
+            padding: 40px 0 16px;
+            text-align: center;
+        }
+
+        .logo-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .logo-icon {
+            width: 44px;
+            height: 44px;
+            background: linear-gradient(135deg, var(--nvidia-green), var(--accent-teal));
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            box-shadow: 0 4px 20px rgba(118, 185, 71, 0.25);
+        }
+
+        .logo-text {
+            font-family: 'Playfair Display', serif;
+            font-size: 32px;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--text-primary), var(--accent-teal));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.5px;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 15px;
+            font-weight: 400;
+            margin-bottom: 8px;
+        }
+
+        .nvidia-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(118, 185, 0, 0.08);
+            border: 1px solid rgba(118, 185, 0, 0.2);
+            border-radius: 20px;
+            padding: 5px 14px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--nvidia-green);
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+
+        .nvidia-badge svg {
+            width: 14px;
+            height: 14px;
+        }
+
+        /* ===== Input Section ===== */
+        .input-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+            padding: 28px;
+            margin: 28px 0;
+            box-shadow: var(--shadow);
+        }
+
+        .input-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+
+        .input-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .drug-count {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: var(--text-muted);
+            background: var(--bg-input);
+            padding: 4px 10px;
+            border-radius: 6px;
+        }
+
+        .drug-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            min-height: 44px;
+            padding: 12px;
+            background: var(--bg-input);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius);
+            cursor: text;
+            transition: border-color 0.2s;
+        }
+
+        .drug-tags:focus-within {
+            border-color: var(--nvidia-green);
+            box-shadow: 0 0 0 3px var(--accent-green-glow);
+        }
+
+        .drug-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: linear-gradient(135deg, rgba(118, 185, 71, 0.12), rgba(45, 212, 191, 0.08));
+            border: 1px solid rgba(118, 185, 71, 0.2);
+            border-radius: 8px;
+            padding: 6px 10px 6px 12px;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-primary);
+            animation: tagIn 0.2s ease-out;
+        }
+
+        @keyframes tagIn {
+            from { opacity: 0; transform: scale(0.85); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        .drug-tag .remove {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.06);
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 13px;
+            line-height: 1;
+            transition: all 0.15s;
+        }
+
+        .drug-tag .remove:hover {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--severity-major);
+        }
+
+        .drug-input {
+            flex: 1;
+            min-width: 140px;
+            background: none;
+            border: none;
+            outline: none;
+            color: var(--text-primary);
+            font-family: 'DM Sans', sans-serif;
+            font-size: 14px;
+            padding: 6px 4px;
+        }
+
+        .drug-input::placeholder {
+            color: var(--text-muted);
+        }
+
+        /* Autocomplete */
+        .autocomplete-wrapper {
+            position: relative;
+        }
+
+        .autocomplete-list {
+            display: none;
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            right: 0;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 100;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .autocomplete-list.active { display: block; }
+
+        .autocomplete-item {
+            padding: 10px 14px;
+            cursor: pointer;
+            font-size: 14px;
+            color: var(--text-secondary);
+            transition: all 0.1s;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .autocomplete-item:hover,
+        .autocomplete-item.selected {
+            background: var(--accent-green-glow);
+            color: var(--text-primary);
+        }
+
+        .autocomplete-item .drug-class {
+            font-size: 11px;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Quick add */
+        .quick-add {
+            margin-top: 12px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .quick-add-label {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-right: 4px;
+            align-self: center;
+        }
+
+        .quick-add-btn {
+            background: var(--bg-input);
+            border: 1px solid var(--border-subtle);
+            border-radius: 6px;
+            padding: 4px 10px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-family: 'DM Sans', sans-serif;
+            transition: all 0.15s;
+        }
+
+        .quick-add-btn:hover {
+            border-color: var(--nvidia-green);
+            color: var(--text-primary);
+            background: var(--accent-green-glow);
+        }
+
+        /* Action buttons */
+        .actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+        }
+
+        .btn-primary {
+            flex: 1;
+            padding: 14px 24px;
+            background: linear-gradient(135deg, var(--nvidia-green), #5a9e00);
+            border: none;
+            border-radius: var(--radius);
+            color: #fff;
+            font-family: 'DM Sans', sans-serif;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            letter-spacing: 0.3px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 24px rgba(118, 185, 0, 0.3);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            padding: 14px 20px;
+            background: var(--bg-input);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius);
+            color: var(--text-secondary);
+            font-family: 'DM Sans', sans-serif;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--border);
+            color: var(--text-primary);
+        }
+
+        /* ===== Loading ===== */
+        .loading-overlay {
+            display: none;
+            text-align: center;
+            padding: 48px 20px;
+        }
+
+        .loading-overlay.active { display: block; }
+
+        .loading-spinner {
+            width: 48px;
+            height: 48px;
+            border: 3px solid var(--border-subtle);
+            border-top-color: var(--nvidia-green);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .loading-text {
+            color: var(--text-secondary);
+            font-size: 15px;
+        }
+
+        .loading-sub {
+            color: var(--text-muted);
+            font-size: 13px;
+            margin-top: 6px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* ===== Results ===== */
+        .results-section {
+            display: none;
+            margin-bottom: 60px;
+            animation: fadeUp 0.4s ease-out;
+        }
+
+        .results-section.active { display: block; }
+
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(16px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Risk banner */
+        .risk-banner {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 20px 24px;
+            border-radius: var(--radius-lg);
+            margin-bottom: 20px;
+            border: 1px solid;
+        }
+
+        .risk-banner.critical {
+            background: rgba(220, 38, 38, 0.06);
+            border-color: rgba(220, 38, 38, 0.2);
+        }
+
+        .risk-banner.high {
+            background: rgba(239, 68, 68, 0.06);
+            border-color: rgba(239, 68, 68, 0.2);
+        }
+
+        .risk-banner.moderate {
+            background: rgba(245, 158, 11, 0.06);
+            border-color: rgba(245, 158, 11, 0.2);
+        }
+
+        .risk-banner.low {
+            background: rgba(34, 197, 94, 0.06);
+            border-color: rgba(34, 197, 94, 0.2);
+        }
+
+        .risk-indicator {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            flex-shrink: 0;
+        }
+
+        .risk-banner.critical .risk-indicator { background: rgba(220, 38, 38, 0.15); }
+        .risk-banner.high .risk-indicator { background: rgba(239, 68, 68, 0.15); }
+        .risk-banner.moderate .risk-indicator { background: rgba(245, 158, 11, 0.15); }
+        .risk-banner.low .risk-indicator { background: rgba(34, 197, 94, 0.15); }
+
+        .risk-label {
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 2px;
+        }
+
+        .risk-banner.critical .risk-label { color: var(--risk-critical); }
+        .risk-banner.high .risk-label { color: var(--risk-high); }
+        .risk-banner.moderate .risk-label { color: var(--risk-moderate); }
+        .risk-banner.low .risk-label { color: var(--risk-low); }
+
+        .risk-summary {
+            color: var(--text-secondary);
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        /* Stats row */
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius);
+            padding: 16px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .stat-value.major { color: var(--severity-major); }
+        .stat-value.moderate { color: var(--severity-moderate); }
+        .stat-value.minor { color: var(--severity-minor); }
+
+        .stat-label {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Interaction cards */
+        .interaction-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius);
+            margin-bottom: 12px;
+            overflow: hidden;
+            transition: border-color 0.2s;
+        }
+
+        .interaction-card:hover {
+            border-color: var(--border);
+        }
+
+        .interaction-card.severity-major { border-left: 3px solid var(--severity-major); }
+        .interaction-card.severity-moderate { border-left: 3px solid var(--severity-moderate); }
+        .interaction-card.severity-minor { border-left: 3px solid var(--severity-minor); }
+
+        .interaction-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .interaction-drugs {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 600;
+            font-size: 15px;
+        }
+
+        .interaction-x {
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+
+        .severity-badge {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            padding: 4px 10px;
+            border-radius: 6px;
+        }
+
+        .severity-badge.major {
+            background: var(--severity-major-bg);
+            color: var(--severity-major);
+            border: 1px solid var(--severity-major-border);
+        }
+
+        .severity-badge.moderate {
+            background: var(--severity-moderate-bg);
+            color: var(--severity-moderate);
+            border: 1px solid var(--severity-moderate-border);
+        }
+
+        .severity-badge.minor {
+            background: var(--severity-minor-bg);
+            color: var(--severity-minor);
+            border: 1px solid var(--severity-minor-border);
+        }
+
+        .interaction-details {
+            display: none;
+            padding: 0 20px 20px;
+            border-top: 1px solid var(--border-subtle);
+        }
+
+        .interaction-card.expanded .interaction-details { display: block; }
+
+        .detail-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-top: 16px;
+        }
+
+        .detail-item {
+            background: var(--bg-input);
+            border-radius: var(--radius-sm);
+            padding: 14px;
+        }
+
+        .detail-item.full-width {
+            grid-column: 1 / -1;
+        }
+
+        .detail-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+        }
+
+        .detail-value {
+            font-size: 14px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        /* Expand indicator */
+        .expand-icon {
+            color: var(--text-muted);
+            transition: transform 0.2s;
+            font-size: 18px;
+        }
+
+        .interaction-card.expanded .expand-icon {
+            transform: rotate(180deg);
+        }
+
+        /* ===== Disclaimer ===== */
+        .disclaimer {
+            background: rgba(245, 158, 11, 0.05);
+            border: 1px solid rgba(245, 158, 11, 0.15);
+            border-radius: var(--radius);
+            padding: 16px 20px;
+            margin-top: 24px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            line-height: 1.6;
+        }
+
+        .disclaimer strong {
+            color: var(--severity-moderate);
+        }
+
+        /* ===== Footer ===== */
+        footer {
+            text-align: center;
+            padding: 32px 0 40px;
+            border-top: 1px solid var(--border-subtle);
+            margin-top: 40px;
+        }
+
+        .footer-nvidia {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+
+        .footer-nvidia a {
+            color: var(--nvidia-green);
+            text-decoration: none;
+        }
+
+        .footer-links {
+            margin-top: 10px;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .footer-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            margin: 0 8px;
+        }
+
+        .footer-links a:hover { color: var(--text-primary); }
+
+        /* ===== Error ===== */
+        .error-msg {
+            display: none;
+            background: rgba(239, 68, 68, 0.06);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            border-radius: var(--radius);
+            padding: 14px 20px;
+            color: var(--severity-major);
+            font-size: 14px;
+            margin-top: 12px;
+        }
+
+        .error-msg.active { display: block; }
+
+        /* ===== Responsive ===== */
+        @media (max-width: 640px) {
+            .container { padding: 0 16px; }
+            header { padding: 24px 0 12px; }
+            .logo-text { font-size: 26px; }
+            .input-section { padding: 20px; }
+            .detail-grid { grid-template-columns: 1fr; }
+            .stats-row { grid-template-columns: 1fr; }
+            .actions { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Background effects -->
+    <div class="bg-grid"></div>
+    <div class="bg-glow bg-glow-1"></div>
+    <div class="bg-glow bg-glow-2"></div>
+
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <div class="logo-row">
+                <div class="logo-icon">🛡️</div>
+                <div class="logo-text">DrugSafe AI</div>
+            </div>
+            <p class="subtitle">AI-powered drug interaction analysis for safer medication management</p>
+            <div class="nvidia-badge">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                Powered by NVIDIA Nemotron via NIM
+            </div>
+        </header>
+
+        <!-- Persistent Disclaimer -->
+        <div class="disclaimer" style="margin: 20px 0 0; border-color: rgba(245, 158, 11, 0.25); background: rgba(245, 158, 11, 0.04);">
+            <strong>⚠️ Educational Tool Only — Not Medical Advice.</strong>
+            DrugSafe AI is a technology demonstration powered by NVIDIA Nemotron. It is <u>not</u> a substitute for professional
+            medical advice, diagnosis, or treatment. Always consult a licensed pharmacist or physician before making medication
+            decisions. AI-generated analysis may contain errors or omissions. Do not rely on this tool for clinical decision-making.
+        </div>
+
+        <!-- Input Section -->
+        <div class="input-section">
+            <div class="input-header">
+                <div class="input-title">Enter Medications</div>
+                <div class="drug-count" id="drugCount">0 / 8 drugs</div>
+            </div>
+
+            <div class="autocomplete-wrapper">
+                <div class="drug-tags" id="drugTags" onclick="document.getElementById('drugInput').focus()">
+                    <input
+                        type="text"
+                        id="drugInput"
+                        class="drug-input"
+                        placeholder="Type a medication name and press Enter..."
+                        autocomplete="off"
+                    >
+                </div>
+                <div class="autocomplete-list" id="autocompleteList"></div>
+            </div>
+
+            <div class="quick-add">
+                <span class="quick-add-label">Quick add:</span>
+                <button class="quick-add-btn" onclick="addDrug('Warfarin')">Warfarin</button>
+                <button class="quick-add-btn" onclick="addDrug('Aspirin')">Aspirin</button>
+                <button class="quick-add-btn" onclick="addDrug('Omeprazole')">Omeprazole</button>
+                <button class="quick-add-btn" onclick="addDrug('Metformin')">Metformin</button>
+                <button class="quick-add-btn" onclick="addDrug('Lisinopril')">Lisinopril</button>
+                <button class="quick-add-btn" onclick="addDrug('Sertraline')">Sertraline</button>
+                <button class="quick-add-btn" onclick="addDrug('Atorvastatin')">Atorvastatin</button>
+                <button class="quick-add-btn" onclick="addDrug('Clopidogrel')">Clopidogrel</button>
+            </div>
+
+            <div class="actions">
+                <button class="btn-primary" id="checkBtn" onclick="checkInteractions()" disabled>
+                    ⚡ Analyze Interactions with Nemotron
+                </button>
+                <button class="btn-secondary" onclick="clearAll()">Clear All</button>
+            </div>
+
+            <div class="error-msg" id="errorMsg"></div>
+        </div>
+
+        <!-- Loading -->
+        <div class="loading-overlay" id="loading">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">Analyzing drug interactions...</div>
+            <div class="loading-sub">NVIDIA Nemotron is reasoning through medication combinations</div>
+        </div>
+
+        <!-- Results -->
+        <div class="results-section" id="results"></div>
+
+        <!-- Footer -->
+        <footer>
+            <div class="footer-nvidia">
+                Built with <a href="https://developer.nvidia.com/nemotron" target="_blank">NVIDIA Nemotron</a> via
+                <a href="https://build.nvidia.com" target="_blank">NIM API</a>
+            </div>
+            <div class="footer-links">
+                <a href="https://github.com" target="_blank">GitHub</a>
+                <a href="https://developer.nvidia.com/gtc-golden-ticket-contest" target="_blank">GTC 2026 Contest</a>
+                #NVIDIAGTC
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        // =====================================================================
+        // State
+        // =====================================================================
+        let selectedDrugs = [];
+        let allDrugs = [];
+        let autocompleteIndex = -1;
+
+        // =====================================================================
+        // Init — fetch drug list for autocomplete
+        // =====================================================================
+        async function init() {
+            try {
+                const res = await fetch('/api/drugs');
+                const data = await res.json();
+                allDrugs = data.drugs || [];
+            } catch (e) {
+                console.log('Could not fetch drug list, autocomplete may be limited');
+            }
+        }
+        init();
+
+        // =====================================================================
+        // Drug tag management
+        // =====================================================================
+        function addDrug(name) {
+            const clean = name.trim();
+            if (!clean) return;
+            const normalized = clean.charAt(0).toUpperCase() + clean.slice(1).toLowerCase();
+
+            if (selectedDrugs.some(d => d.toLowerCase() === normalized.toLowerCase())) return;
+            if (selectedDrugs.length >= 8) return;
+
+            selectedDrugs.push(normalized);
+            renderTags();
+            updateCheckBtn();
+
+            const input = document.getElementById('drugInput');
+            input.value = '';
+            hideAutocomplete();
+        }
+
+        function removeDrug(index) {
+            selectedDrugs.splice(index, 1);
+            renderTags();
+            updateCheckBtn();
+        }
+
+        function clearAll() {
+            selectedDrugs = [];
+            renderTags();
+            updateCheckBtn();
+            document.getElementById('results').innerHTML = '';
+            document.getElementById('results').classList.remove('active');
+            document.getElementById('errorMsg').classList.remove('active');
+        }
+
+        function renderTags() {
+            const container = document.getElementById('drugTags');
+            const input = document.getElementById('drugInput');
+
+            // Remove existing tags
+            container.querySelectorAll('.drug-tag').forEach(t => t.remove());
+
+            selectedDrugs.forEach((drug, i) => {
+                const tag = document.createElement('span');
+                tag.className = 'drug-tag';
+                tag.innerHTML = `${drug}<button class="remove" onclick="removeDrug(${i})">×</button>`;
+                container.insertBefore(tag, input);
+            });
+
+            document.getElementById('drugCount').textContent = `${selectedDrugs.length} / 8 drugs`;
+        }
+
+        function updateCheckBtn() {
+            document.getElementById('checkBtn').disabled = selectedDrugs.length < 2;
+        }
+
+        // =====================================================================
+        // Autocomplete
+        // =====================================================================
+        const drugInput = document.getElementById('drugInput');
+        const autocompleteList = document.getElementById('autocompleteList');
+
+        drugInput.addEventListener('input', function () {
+            const val = this.value.trim().toLowerCase();
+            if (val.length < 1) {
+                hideAutocomplete();
+                return;
+            }
+
+            const matches = allDrugs.filter(d =>
+                d.toLowerCase().startsWith(val) &&
+                !selectedDrugs.some(s => s.toLowerCase() === d.toLowerCase())
+            ).slice(0, 6);
+
+            if (matches.length === 0) {
+                hideAutocomplete();
+                return;
+            }
+
+            autocompleteIndex = -1;
+            autocompleteList.innerHTML = matches.map((d, i) =>
+                `<div class="autocomplete-item" data-drug="${d}" onclick="addDrug('${d}')">${d}</div>`
+            ).join('');
+            autocompleteList.classList.add('active');
+        });
+
+        drugInput.addEventListener('keydown', function (e) {
+            const items = autocompleteList.querySelectorAll('.autocomplete-item');
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                autocompleteIndex = Math.min(autocompleteIndex + 1, items.length - 1);
+                updateAutocompleteSelection(items);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                autocompleteIndex = Math.max(autocompleteIndex - 1, -1);
+                updateAutocompleteSelection(items);
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (autocompleteIndex >= 0 && items[autocompleteIndex]) {
+                    addDrug(items[autocompleteIndex].dataset.drug);
+                } else if (this.value.trim()) {
+                    addDrug(this.value);
+                }
+            } else if (e.key === 'Backspace' && !this.value && selectedDrugs.length > 0) {
+                removeDrug(selectedDrugs.length - 1);
+            }
+        });
+
+        function updateAutocompleteSelection(items) {
+            items.forEach((item, i) => {
+                item.classList.toggle('selected', i === autocompleteIndex);
+            });
+        }
+
+        function hideAutocomplete() {
+            autocompleteList.classList.remove('active');
+            autocompleteIndex = -1;
+        }
+
+        document.addEventListener('click', function (e) {
+            if (!e.target.closest('.autocomplete-wrapper')) {
+                hideAutocomplete();
+            }
+        });
+
+        // =====================================================================
+        // API Call — Check Interactions via Nemotron
+        // =====================================================================
+        async function checkInteractions() {
+            if (selectedDrugs.length < 2) return;
+
+            const errorMsg = document.getElementById('errorMsg');
+            const loading = document.getElementById('loading');
+            const resultsEl = document.getElementById('results');
+
+            errorMsg.classList.remove('active');
+            resultsEl.classList.remove('active');
+            resultsEl.innerHTML = '';
+            loading.classList.add('active');
+            document.getElementById('checkBtn').disabled = true;
+
+            try {
+                const res = await fetch('/api/check', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ medications: selectedDrugs })
+                });
+
+                const data = await res.json();
+
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                renderResults(data);
+            } catch (err) {
+                errorMsg.textContent = `Error: ${err.message}`;
+                errorMsg.classList.add('active');
+            } finally {
+                loading.classList.remove('active');
+                document.getElementById('checkBtn').disabled = selectedDrugs.length < 2;
+            }
+        }
+
+        // =====================================================================
+        // Render Results
+        // =====================================================================
+        function renderResults(data) {
+            const el = document.getElementById('results');
+            const interactions = data.interactions || [];
+            const riskScore = (data.risk_score || 'low').toLowerCase();
+            const summary = data.summary || 'Analysis complete.';
+
+            const majorCount = interactions.filter(i => i.severity === 'major').length;
+            const moderateCount = interactions.filter(i => i.severity === 'moderate').length;
+            const minorCount = interactions.filter(i => i.severity === 'minor').length;
+
+            const riskIcons = { critical: '🔴', high: '🟠', moderate: '🟡', low: '🟢' };
+            const riskLabels = { critical: 'Critical Risk', high: 'High Risk', moderate: 'Moderate Risk', low: 'Low Risk' };
+
+            let html = '';
+
+            // Risk banner
+            html += `
+                <div class="risk-banner ${riskScore}">
+                    <div class="risk-indicator">${riskIcons[riskScore] || '🟢'}</div>
+                    <div>
+                        <div class="risk-label">${riskLabels[riskScore] || 'Assessment'}</div>
+                        <div class="risk-summary">${summary}</div>
+                    </div>
+                </div>
+            `;
+
+            // Stats
+            html += `
+                <div class="stats-row">
+                    <div class="stat-card">
+                        <div class="stat-value major">${majorCount}</div>
+                        <div class="stat-label">Major</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value moderate">${moderateCount}</div>
+                        <div class="stat-label">Moderate</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value minor">${minorCount}</div>
+                        <div class="stat-label">Minor</div>
+                    </div>
+                </div>
+            `;
+
+            // Interaction cards (sorted: major first)
+            const sorted = [...interactions].sort((a, b) => {
+                const order = { major: 0, moderate: 1, minor: 2 };
+                return (order[a.severity] ?? 3) - (order[b.severity] ?? 3);
+            });
+
+            if (sorted.length === 0) {
+                html += `
+                    <div class="interaction-card" style="padding: 24px; text-align: center;">
+                        <p style="color: var(--text-secondary);">🟢 No significant interactions detected between these medications.</p>
+                    </div>
+                `;
+            }
+
+            sorted.forEach((interaction, i) => {
+                const sev = (interaction.severity || 'minor').toLowerCase();
+                html += `
+                    <div class="interaction-card severity-${sev}" id="card-${i}">
+                        <div class="interaction-header" onclick="toggleCard(${i})">
+                            <div class="interaction-drugs">
+                                <span>${interaction.drug1}</span>
+                                <span class="interaction-x">✕</span>
+                                <span>${interaction.drug2}</span>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 12px;">
+                                <span class="severity-badge ${sev}">${sev}</span>
+                                <span class="expand-icon">▾</span>
+                            </div>
+                        </div>
+                        <div class="interaction-details">
+                            <div class="detail-grid">
+                                <div class="detail-item">
+                                    <div class="detail-label">Interaction Type</div>
+                                    <div class="detail-value">${interaction.interaction_type || 'N/A'}</div>
+                                </div>
+                                <div class="detail-item">
+                                    <div class="detail-label">Severity</div>
+                                    <div class="detail-value" style="text-transform: capitalize;">${sev}</div>
+                                </div>
+                                <div class="detail-item full-width">
+                                    <div class="detail-label">Mechanism</div>
+                                    <div class="detail-value">${interaction.mechanism || 'N/A'}</div>
+                                </div>
+                                <div class="detail-item full-width">
+                                    <div class="detail-label">Clinical Significance</div>
+                                    <div class="detail-value">${interaction.clinical_significance || 'N/A'}</div>
+                                </div>
+                                <div class="detail-item full-width">
+                                    <div class="detail-label">Recommendation</div>
+                                    <div class="detail-value">${interaction.recommendation || 'N/A'}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            // Disclaimer
+            html += `
+                <div class="disclaimer">
+                    <strong>⚠️ Medical Disclaimer:</strong> DrugSafe AI is an educational tool powered by NVIDIA Nemotron.
+                    It is NOT a substitute for professional medical advice. Always consult a licensed pharmacist or physician
+                    before making medication decisions. AI-generated analysis may contain inaccuracies.
+                    <br><br>
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-muted);">
+                        Model: ${data.model_used || 'NVIDIA Nemotron'} &nbsp;|&nbsp; ${data.powered_by || 'NVIDIA NIM'}
+                    </span>
+                </div>
+            `;
+
+            el.innerHTML = html;
+            el.classList.add('active');
+
+            // Auto-expand first major interaction
+            const firstMajor = sorted.findIndex(i => i.severity === 'major');
+            if (firstMajor >= 0) toggleCard(firstMajor);
+            else if (sorted.length > 0) toggleCard(0);
+
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function toggleCard(index) {
+            document.getElementById(`card-${index}`).classList.toggle('expanded');
+        }
+    </script>
+</body>
+</html>
