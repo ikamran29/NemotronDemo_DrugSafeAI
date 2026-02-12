@@ -253,11 +253,10 @@ def fetch_fda_adverse_events(drug1: str, drug2: str) -> int:
         return 0
 
 
-def build_nemotron_prompt(medications: list[str]) -> tuple[str, list[str]]:
+def build_nemotron_prompt(medications: list[str]) -> str:
     """
     Build a structured prompt for Nemotron to analyze drug interactions.
     Includes drug metadata from local DB AND live FDA label data.
-    Returns (prompt_string, list_of_data_sources_used).
     """
     # Look up drug info from our database
     drug_info_parts = []
@@ -283,16 +282,11 @@ def build_nemotron_prompt(medications: list[str]) -> tuple[str, list[str]]:
     if unrecognized:
         drug_context += f"\n\nNote: The following medications were not found in the local database but should still be analyzed using your medical knowledge: {', '.join(unrecognized)}"
 
-    # Track which data sources we actually got data from
-    sources_used = ["Local Drug Database"]
-
     # --- Fetch FDA label data for each drug ---
     fda_sections = []
-    fda_found_any = False
     for med in medications:
         fda = fetch_fda_drug_info(med.strip())
         if fda["found"]:
-            fda_found_any = True
             parts = [f"- **{med.strip().title()}** (FDA Label)"]
             if fda["generic_name"]:
                 parts.append(f"  Generic: {fda['generic_name']}")
@@ -310,13 +304,11 @@ def build_nemotron_prompt(medications: list[str]) -> tuple[str, list[str]]:
 
     # --- Fetch FDA adverse event co-occurrence counts ---
     ae_parts = []
-    ae_found_any = False
     med_list = [m.strip() for m in medications]
     for i in range(len(med_list)):
         for j in range(i + 1, len(med_list)):
             count = fetch_fda_adverse_events(med_list[i], med_list[j])
             if count > 0:
-                ae_found_any = True
                 ae_parts.append(f"- {med_list[i].title()} + {med_list[j].title()}: {count:,} adverse event reports in FDA FAERS database")
 
     ae_context = ""
@@ -363,12 +355,7 @@ You MUST respond with ONLY valid JSON in this exact format, with no other text b
 
 Respond with ONLY the JSON object. No markdown, no code fences, no explanation outside the JSON."""
 
-    if fda_found_any:
-        sources_used.append("openFDA Drug Labels")
-    if ae_found_any:
-        sources_used.append("FDA FAERS Adverse Events")
-
-    return prompt, sources_used
+    return prompt
 
 
 def call_nemotron(prompt: str) -> dict:
@@ -456,8 +443,8 @@ def check_interactions():
     if len(medications) > 8:
         return jsonify({"error": "Please limit to 8 medications at a time."}), 400
 
-    # Build prompt with drug context + FDA data
-    prompt, sources_used = build_nemotron_prompt(medications)
+    # Build prompt with drug context
+    prompt = build_nemotron_prompt(medications)
 
     # Call Nemotron via NIM
     result = call_nemotron(prompt)
@@ -475,7 +462,7 @@ def check_interactions():
     result["drug_details"] = drug_details
     result["model_used"] = NEMOTRON_MODEL
     result["powered_by"] = "NVIDIA NIM + Nemotron"
-    result["data_sources"] = sources_used
+    result["data_sources"] = ["Local Drug Database", "openFDA Drug Labels", "FDA FAERS Adverse Events"]
 
     return jsonify(result)
 
